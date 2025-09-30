@@ -1,9 +1,10 @@
-import express from "express";
-import fetch from "node-fetch";
-import multer from "multer";
 import cors from "cors";
-import path from "path";
+import express from "express";
 import fs from "fs/promises";
+import multer from "multer";
+import fetch from "node-fetch";
+import path from "path";
+import { generateImageHash, getImageInfo, isImageCorrupted, processImage, saveMetadata } from "./utils/imageProcessor.js";
 
 const app = express();
 
@@ -11,16 +12,20 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Create uploads directory if it doesn't exist
-const createUploadsDir = async () => {
-	try {
-		await fs.mkdir("./uploads", { recursive: true });
-		console.log("✅ Uploads directory ready");
-	} catch (error) {
-		console.log("📁 Uploads directory already exists");
+// Create required directories
+const createDirectories = async () => {
+	const dirs = ["./uploads", "./processed/originals", "./processed/resized", "./processed/metadata"];
+
+	for (const dir of dirs) {
+		try {
+			await fs.mkdir(dir, { recursive: true });
+			console.log(`✅ ${dir} directory ready`);
+		} catch (error) {
+			console.log(`📁 ${dir} already exists`);
+		}
 	}
 };
-createUploadsDir();
+createDirectories();
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({
@@ -36,11 +41,10 @@ const storage = multer.diskStorage({
 const upload = multer({
 	storage: storage,
 	limits: {
-		fileSize: 10 * 1024 * 1024, // 10MB limit per file
-		files: 10, // max 10 files at once
+		fileSize: 10 * 1024 * 1024,
+		files: 10,
 	},
 	fileFilter: (req, file, cb) => {
-		// Only allow image files
 		if (file.mimetype.startsWith("image/")) {
 			cb(null, true);
 		} else {
@@ -49,71 +53,31 @@ const upload = multer({
 	},
 });
 
-// EXISTING ENDPOINTS (unchanged)
-app.post("/send-to-n8n", async (req, res) => {
-	try {
-		console.log("Sending data to n8n:", req.body);
-
-		const response = await fetch("http://localhost:5678/webhook/from-backend", {
-			method: "POST",
-			headers: {
-				"Content-Type": "application/json",
-				Accept: "application/json",
-			},
-			body: JSON.stringify(req.body),
-			timeout: 10000,
-		});
-
-		console.log("n8n response status:", response.status);
-		console.log("n8n response headers:", Object.fromEntries(response.headers));
-
-		const contentType = response.headers.get("content-type");
-		let data;
-
-		if (contentType && contentType.includes("application/json")) {
-			data = await response.json();
-		} else {
-			data = await response.text();
-		}
-
-		console.log("n8n response data:", data);
-
-		if (!response.ok) {
-			throw new Error(`n8n responded with status: ${response.status}, data: ${JSON.stringify(data)}`);
-		}
-
-		res.json({
-			success: true,
-			message: "Data sent to n8n successfully",
-			n8nResponse: data,
-		});
-	} catch (err) {
-		console.error("Error sending to n8n:", err);
-		res.status(500).json({
-			success: false,
-			error: err.message,
-			details: "Check if n8n is running and the webhook URL is correct",
-		});
-	}
-});
+// ========================================
+// EXISTING ENDPOINTS (from Step 2)
+// ========================================
 
 app.get("/test", (req, res) => {
 	res.json({
-		message: "Backend server is running!",
+		message: "Backend server is running - Step 3!",
 		timestamp: new Date().toISOString(),
+		features: ["File Upload", "Image Processing"],
 		endpoints: [
 			"GET  /test - Health check",
 			"GET  /check-n8n - Test n8n connection",
 			"POST /send-to-n8n - Send data to n8n",
 			"POST /upload-images - Upload image files",
 			"GET  /uploads - List uploaded files",
+			"POST /process-images - Process uploaded images (NEW)",
+			"GET  /processed-images - List processed images (NEW)",
+			"POST /validate-image - Validate single image (NEW)",
 		],
 	});
 });
 
 app.get("/check-n8n", async (req, res) => {
 	try {
-		const response = await fetch("http://localhost:5678/from-backend", {
+		const response = await fetch("http://localhost:5678/webhook/from-backend", {
 			method: "GET",
 		});
 		res.json({
@@ -128,9 +92,6 @@ app.get("/check-n8n", async (req, res) => {
 	}
 });
 
-// NEW FILE UPLOAD ENDPOINTS
-
-// Main file upload endpoint
 app.post("/upload-images", upload.array("images", 10), async (req, res) => {
 	try {
 		if (!req.files || req.files.length === 0) {
@@ -142,7 +103,6 @@ app.post("/upload-images", upload.array("images", 10), async (req, res) => {
 
 		console.log(`📤 Received ${req.files.length} files for upload`);
 
-		// Prepare file metadata for n8n
 		const uploadData = {
 			uploadId: Date.now().toString(),
 			totalFiles: req.files.length,
@@ -160,10 +120,10 @@ app.post("/upload-images", upload.array("images", 10), async (req, res) => {
 				ip: req.ip,
 			},
 		};
+		console.log(uploadData)
 
 		console.log("📨 Sending file metadata to n8n...");
 
-		// Send file info to n8n for processing
 		try {
 			const n8nResponse = await fetch("http://localhost:5678/webhook/process-upload", {
 				method: "POST",
@@ -186,11 +146,8 @@ app.post("/upload-images", upload.array("images", 10), async (req, res) => {
 					n8nData = await n8nResponse.text();
 				}
 				console.log("✅ n8n processing started successfully");
-			} else {
-				console.log(`❌ n8n responded with status: ${n8nResponse.status}`);
 			}
 
-			// Return success response regardless of n8n status
 			res.json({
 				success: true,
 				uploadId: uploadData.uploadId,
@@ -208,7 +165,6 @@ app.post("/upload-images", upload.array("images", 10), async (req, res) => {
 		} catch (n8nError) {
 			console.error("n8n connection error:", n8nError.message);
 
-			// Still return success for file upload, just note n8n issue
 			res.json({
 				success: true,
 				uploadId: uploadData.uploadId,
@@ -233,7 +189,6 @@ app.post("/upload-images", upload.array("images", 10), async (req, res) => {
 	}
 });
 
-// Get list of uploaded files
 app.get("/uploads", async (req, res) => {
 	try {
 		const files = await fs.readdir("./uploads");
@@ -254,7 +209,6 @@ app.get("/uploads", async (req, res) => {
 			}
 		}
 
-		// Sort by upload time (newest first)
 		fileDetails.sort((a, b) => new Date(b.uploadTime) - new Date(a.uploadTime));
 
 		res.json({
@@ -270,35 +224,381 @@ app.get("/uploads", async (req, res) => {
 	}
 });
 
-// Delete uploaded file (utility endpoint)
-app.delete("/uploads/:filename", async (req, res) => {
-	try {
-		const filename = req.params.filename;
-		const filepath = path.join("./uploads", filename);
+// ========================================
+// NEW ENDPOINTS (Step 3 - Image Processing)
+// ========================================
 
-		await fs.unlink(filepath);
-		console.log(`🗑️ Deleted file: ${filename}`);
+// Process uploaded images
+app.post("/process-images", async (req, res) => {
+	try {
+		const { uploadId, filenames } = req.body;
+
+		console.log(`🔄 Starting image processing...`);
+
+		// Get files to process
+		let filesToProcess;
+		if (filenames && Array.isArray(filenames)) {
+			filesToProcess = filenames;
+		} else {
+			// Process all files in uploads directory
+			filesToProcess = await fs.readdir("./uploads");
+		}
+
+		const results = [];
+		const hashes = new Set();
+		const duplicates = [];
+
+		for (const filename of filesToProcess) {
+			try {
+				const inputPath = path.join("./uploads", filename);
+				const originalPath = path.join("./processed/originals", filename);
+				const processedFilename = filename.replace(/\.(jpg|jpeg|png|webp|gif)$/i, "_processed.jpg");
+				const processedPath = path.join("./processed/resized", processedFilename);
+				const metadataPath = path.join("./processed/metadata", filename.replace(/\.(jpg|jpeg|png|webp|gif)$/i, "_meta.json"));
+
+				// Check if file is corrupted
+				const corrupted = await isImageCorrupted(inputPath);
+				if (corrupted) {
+					results.push({
+						filename,
+						success: false,
+						error: "Image file is corrupted or invalid",
+					});
+					continue;
+				}
+
+				// Generate hash for duplicate detection
+				const hash = await generateImageHash(inputPath);
+				if (hashes.has(hash)) {
+					duplicates.push(filename);
+					results.push({
+						filename,
+						success: false,
+						error: "Duplicate image detected",
+						hash,
+					});
+					continue;
+				}
+				hashes.add(hash);
+
+				// Copy original to backup
+				await fs.copyFile(inputPath, originalPath);
+
+				// Process image
+				const processResult = await processImage(inputPath, processedPath);
+
+				if (!processResult.success) {
+					results.push({
+						filename,
+						success: false,
+						error: processResult.error,
+					});
+					continue;
+				}
+
+				// Save metadata
+				const metadata = {
+					originalFile: filename,
+					processedFile: processedFilename,
+					uploadId: uploadId || "unknown",
+					originalSize: processResult.original,
+					processedSize: processResult.processed,
+					hash,
+					processedAt: new Date().toISOString(),
+					processingTime: processResult.processingTime,
+				};
+
+				await saveMetadata(metadataPath, metadata);
+
+				results.push({
+					filename,
+					success: true,
+					...processResult,
+					hash,
+					paths: {
+						original: originalPath,
+						processed: processedPath,
+						metadata: metadataPath,
+					},
+				});
+
+				console.log(`✅ Processed: ${filename}`);
+			} catch (error) {
+				results.push({
+					filename,
+					success: false,
+					error: error.message,
+				});
+				console.error(`❌ Failed to process ${filename}:`, error.message);
+			}
+		}
+
+		const successful = results.filter((r) => r.success).length;
+		const failed = results.filter((r) => !r.success).length;
 
 		res.json({
 			success: true,
-			message: `File ${filename} deleted successfully`,
+			uploadId: uploadId || "batch",
+			totalFiles: filesToProcess.length,
+			processed: successful,
+			failed,
+			duplicates: duplicates.length,
+			duplicateFiles: duplicates,
+			results,
 		});
 	} catch (error) {
-		if (error.code === "ENOENT") {
-			res.status(404).json({
-				success: false,
-				error: "File not found",
-			});
-		} else {
-			res.status(500).json({
-				success: false,
-				error: error.message,
-			});
-		}
+		console.error("❌ Processing error:", error);
+		res.status(500).json({
+			success: false,
+			error: error.message,
+		});
 	}
 });
 
-// Error handling middleware for multer
+// Get list of processed images
+// Replace the /process-images endpoint in your server.js with this version
+
+app.post("/process-images", async (req, res) => {
+	try {
+		const { uploadId, filenames } = req.body;
+
+		console.log("\n🚀 ========== STARTING IMAGE PROCESSING ==========");
+		console.log("📦 Request body:", { uploadId, filenames });
+
+		// Get files to process
+		let filesToProcess;
+		if (filenames && Array.isArray(filenames)) {
+			filesToProcess = filenames;
+			console.log(`📁 Processing specific files (${filenames.length}):`, filenames);
+		} else {
+			// Process all files in uploads directory
+			filesToProcess = await fs.readdir("./uploads");
+			console.log(`📁 Processing all files in uploads (${filesToProcess.length}):`, filesToProcess);
+		}
+
+		const results = [];
+		const hashes = new Set();
+		const duplicates = [];
+
+		console.log(`\n🔄 Starting batch processing of ${filesToProcess.length} files...\n`);
+
+		for (let i = 0; i < filesToProcess.length; i++) {
+			const filename = filesToProcess[i];
+			console.log(`\n📸 [${i + 1}/${filesToProcess.length}] Processing: ${filename}`);
+			console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+
+			try {
+				const inputPath = path.join("./uploads", filename);
+				const originalPath = path.join("./processed/originals", filename);
+				const processedFilename = filename.replace(/\.(jpg|jpeg|png|webp|gif)$/i, "_processed.jpg");
+				const processedPath = path.join("./processed/resized", processedFilename);
+				const metadataPath = path.join("./processed/metadata", filename.replace(/\.(jpg|jpeg|png|webp|gif)$/i, "_meta.json"));
+
+				console.log("📂 Paths:");
+				console.log("   Input:", inputPath);
+				console.log("   Original backup:", originalPath);
+				console.log("   Processed output:", processedPath);
+				console.log("   Metadata:", metadataPath);
+
+				// Check if file exists
+				try {
+					await fs.access(inputPath);
+					console.log("✅ Input file exists");
+				} catch (error) {
+					console.error("❌ Input file not found:", inputPath);
+					results.push({
+						filename,
+						success: false,
+						error: "Input file not found"
+					});
+					continue;
+				}
+
+				// Check if file is corrupted
+				console.log("🔍 Checking for corruption...");
+				const corrupted = await isImageCorrupted(inputPath);
+				if (corrupted) {
+					console.error("❌ Image is corrupted");
+					results.push({
+						filename,
+						success: false,
+						error: "Image file is corrupted or invalid",
+					});
+					continue;
+				}
+				console.log("✅ Image is not corrupted");
+
+				// Generate hash for duplicate detection
+				console.log("🔐 Generating hash...");
+				const hash = await generateImageHash(inputPath);
+				console.log(`   Hash: ${hash.substring(0, 16)}...`);
+				
+				if (hashes.has(hash)) {
+					console.warn("⚠️  Duplicate detected!");
+					duplicates.push(filename);
+					results.push({
+						filename,
+						success: false,
+						error: "Duplicate image detected",
+						hash,
+					});
+					continue;
+				}
+				hashes.add(hash);
+				console.log("✅ No duplicate found");
+
+				// Copy original to backup
+				console.log("📋 Backing up original...");
+				await fs.copyFile(inputPath, originalPath);
+				console.log("✅ Original backed up to:", originalPath);
+
+				// Process image
+				console.log("⚙️  Starting image processing...");
+				const processResult = await processImage(inputPath, processedPath);
+
+				if (!processResult.success) {
+					console.error("❌ Processing failed:", processResult.error);
+					results.push({
+						filename,
+						success: false,
+						error: processResult.error,
+					});
+					continue;
+				}
+
+				console.log("✅ Image processing successful!");
+
+				// Verify processed file exists
+				try {
+					const processedStats = await fs.stat(processedPath);
+					console.log("✅ Processed file created:", processedPath);
+					console.log("   Size:", processedStats.size, "bytes");
+				} catch (error) {
+					console.error("❌ Processed file not found after processing!", processedPath);
+					results.push({
+						filename,
+						success: false,
+						error: "Processed file not created"
+					});
+					continue;
+				}
+
+				// Save metadata
+				console.log("💾 Saving metadata...");
+				const metadata = {
+					originalFile: filename,
+					processedFile: processedFilename,
+					uploadId: uploadId || "unknown",
+					originalSize: processResult.original,
+					processedSize: processResult.processed,
+					hash,
+					processedAt: new Date().toISOString(),
+					processingTime: processResult.processingTime,
+				};
+
+				const metaSaved = await saveMetadata(metadataPath, metadata);
+				if (metaSaved) {
+					console.log("✅ Metadata saved");
+				} else {
+					console.warn("⚠️  Metadata save failed (continuing anyway)");
+				}
+
+				results.push({
+					filename,
+					success: true,
+					...processResult,
+					hash,
+					paths: {
+						original: originalPath,
+						processed: processedPath,
+						metadata: metadataPath,
+					},
+				});
+
+				console.log(`✅ [${i + 1}/${filesToProcess.length}] Successfully processed: ${filename}`);
+
+			} catch (error) {
+				console.error(`❌ [${i + 1}/${filesToProcess.length}] Error processing ${filename}:`, error.message);
+				console.error("   Stack:", error.stack);
+				results.push({
+					filename,
+					success: false,
+					error: error.message,
+				});
+			}
+		}
+
+		const successful = results.filter((r) => r.success).length;
+		const failed = results.filter((r) => !r.success).length;
+
+		console.log("\n✅ ========== PROCESSING COMPLETE ==========");
+		console.log(`📊 Summary:`);
+		console.log(`   Total: ${filesToProcess.length}`);
+		console.log(`   Successful: ${successful}`);
+		console.log(`   Failed: ${failed}`);
+		console.log(`   Duplicates: ${duplicates.length}`);
+		console.log("============================================\n");
+
+		res.json({
+			success: true,
+			uploadId: uploadId || "batch",
+			totalFiles: filesToProcess.length,
+			processed: successful,
+			failed,
+			duplicates: duplicates.length,
+			duplicateFiles: duplicates,
+			results,
+		});
+	} catch (error) {
+		console.error("\n❌ ========== PROCESSING ERROR ==========");
+		console.error("Error:", error.message);
+		console.error("Stack:", error.stack);
+		console.error("=========================================\n");
+		
+		res.status(500).json({
+			success: false,
+			error: error.message,
+		});
+	}
+});
+
+// Validate a single image
+app.post("/validate-image", upload.single("image"), async (req, res) => {
+	try {
+		if (!req.file) {
+			return res.status(400).json({
+				success: false,
+				error: "No image file provided",
+			});
+		}
+
+		const corrupted = await isImageCorrupted(req.file.path);
+		if (corrupted) {
+			await fs.unlink(req.file.path);
+			return res.json({
+				success: false,
+				valid: false,
+				error: "Image is corrupted or invalid",
+			});
+		}
+
+		const info = await getImageInfo(req.file.path);
+		await fs.unlink(req.file.path);
+
+		res.json({
+			success: true,
+			valid: true,
+			imageInfo: info,
+		});
+	} catch (error) {
+		res.status(500).json({
+			success: false,
+			error: error.message,
+		});
+	}
+});
+
+// Error handling middleware
 app.use((error, req, res, next) => {
 	if (error instanceof multer.MulterError) {
 		if (error.code === "LIMIT_FILE_SIZE") {
@@ -331,13 +631,11 @@ app.use((error, req, res, next) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
 	console.log(`🚀 Backend server running on http://localhost:${PORT}`);
-	console.log(`📊 API endpoints available:`);
-	console.log(`   GET  /test - Health check`);
-	console.log(`   GET  /check-n8n - Test n8n connection`);
-	console.log(`   POST /send-to-n8n - Send data to n8n`);
-	console.log(`   POST /upload-images - Upload image files`);
-	console.log(`   GET  /uploads - List uploaded files`);
-	console.log(`   DELETE /uploads/:filename - Delete specific file`);
-	console.log(`📁 Upload directory: ./uploads`);
-	console.log(`🔗 n8n webhook endpoint: /webhook/process-upload`);
+	// console.log(`📊 Step 3: File Upload + Image Processing`);
+	// console.log(`📁 Directories:`);
+	// console.log(`   - uploads/ (raw uploads)`);
+	// console.log(`   - processed/originals/ (backup)`);
+	// console.log(`   - processed/resized/ (2048px processed)`);
+	// console.log(`   - processed/metadata/ (processing info)`);
+	// console.log(`🔗 API endpoints ready`);
 });
