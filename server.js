@@ -19,13 +19,24 @@ const createDirectories = async () => {
 	for (const dir of dirs) {
 		try {
 			await fs.mkdir(dir, { recursive: true });
-			console.log(`✅ ${dir} directory ready`);
+			// console.log(`✅ ${dir} directory ready`);
 		} catch (error) {
 			console.log(`📁 ${dir} already exists`);
 		}
 	}
 };
 createDirectories();
+
+// Create no-background directory
+const createNoBackgroundDir = async () => {
+	try {
+		await fs.mkdir('./processed/no-background', { recursive: true });
+		console.log('✅ ./processed/no-background directory ready');
+	} catch (error) {
+		console.log('📁 ./processed/no-background already exists');
+	}
+};
+createNoBackgroundDir();
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({
@@ -598,6 +609,277 @@ app.post("/validate-image", upload.single("image"), async (req, res) => {
 	}
 });
 
+
+
+// Remove background from processed images
+app.post("/remove-background", async (req, res) => {
+	try {
+		const { filenames } = req.body;
+
+		console.log("\n🎨 ========== STARTING BACKGROUND REMOVAL ==========");
+
+		// Get files to process
+		let filesToProcess;
+		if (filenames && Array.isArray(filenames)) {
+			filesToProcess = filenames;
+			console.log(`📁 Processing specific files (${filenames.length}):`, filenames);
+		} else {
+			// Process all resized images
+			const resizedFiles = await fs.readdir('./processed/resized');
+			filesToProcess = resizedFiles.filter(f => f.endsWith('.jpg') || f.endsWith('.jpeg') || f.endsWith('.png'));
+			console.log(`📁 Processing all resized images (${filesToProcess.length})`);
+		}
+
+		if (filesToProcess.length === 0) {
+			return res.json({
+				success: false,
+				error: 'No images found to process. Make sure images are resized first.',
+				hint: 'Run POST /process-images first'
+			});
+		}
+
+		const results = [];
+		const FormData = (await import('form-data')).default;
+
+		console.log(`\n🔄 Starting background removal for ${filesToProcess.length} files...\n`);
+
+		for (let i = 0; i < filesToProcess.length; i++) {
+			const filename = filesToProcess[i];
+			console.log(`\n🎨 [${i + 1}/${filesToProcess.length}] Removing background: ${filename}`);
+			console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+
+			try {
+				const inputPath = path.join('./processed/resized', filename);
+				const outputFilename = filename.replace(/\.(jpg|jpeg)$/i, '_no_bg.png');
+				const outputPath = path.join('./processed/no-background', outputFilename);
+
+				console.log("📂 Paths:");
+				console.log("   Input:", inputPath);
+				console.log("   Output:", outputPath);
+
+				// Check if input file exists
+				try {
+					await fs.access(inputPath);
+					console.log("✅ Input file exists");
+				} catch (error) {
+					console.error("❌ Input file not found:", inputPath);
+					results.push({
+						filename,
+						success: false,
+						error: 'Input file not found'
+					});
+					continue;
+				}
+
+				// Check if rembg service is available
+				console.log("🔍 Checking rembg service...");
+				try {
+					const healthCheck = await fetch('http://localhost:5000/health');
+					if (!healthCheck.ok) {
+						throw new Error('Service not healthy');
+					}
+					console.log("✅ rembg service is available");
+				} catch (error) {
+					console.error("❌ rembg service not available:", error.message);
+					results.push({
+						filename,
+						success: false,
+						error: 'rembg service not available. Is Docker container running?'
+					});
+					continue;
+				}
+
+				// Prepare form data
+				const formData = new FormData();
+				const fileStream = await fs.readFile(inputPath);
+				formData.append('image', fileStream, {
+					filename: filename,
+					contentType: 'image/jpeg'
+				});
+
+				console.log("🚀 Sending to rembg service...");
+				const startTime = Date.now();
+
+				// Call rembg service
+				const response = await fetch('http://localhost:5000/remove-background', {
+					method: 'POST',
+					body: formData,
+					headers: formData.getHeaders()
+				});
+
+				if (!response.ok) {
+					const errorText = await response.text();
+					throw new Error(`rembg service error: ${response.status} - ${errorText}`);
+				}
+
+				// Save the result
+				const buffer = await response.arrayBuffer();
+				await fs.writeFile(outputPath, Buffer.from(buffer));
+
+				const processingTime = Date.now() - startTime;
+
+				// Get file stats
+				const outputStats = await fs.stat(outputPath);
+
+				console.log("✅ Background removed successfully!");
+				console.log(`   Processing time: ${processingTime}ms`);
+				console.log(`   Output size: ${(outputStats.size / 1024).toFixed(1)} KB`);
+
+				// Update metadata
+				const metaFilename = filename.replace(/\.(jpg|jpeg)$/i, '_meta.json');
+				const metaPath = path.join('./processed/metadata', metaFilename);
+
+				try {
+					const metaContent = await fs.readFile(metaPath, 'utf-8');
+					const metadata = JSON.parse(metaContent);
+					metadata.noBackgroundFile = outputFilename;
+					metadata.backgroundRemovalTime = processingTime;
+					metadata.backgroundRemovedAt = new Date().toISOString();
+					await fs.writeFile(metaPath, JSON.stringify(metadata, null, 2));
+					console.log("✅ Metadata updated");
+				} catch (metaError) {
+					console.warn("⚠️  Could not update metadata:", metaError.message);
+				}
+
+				results.push({
+					filename,
+					success: true,
+					outputFilename,
+					outputPath,
+					processingTime,
+					outputSize: outputStats.size
+				});
+
+				console.log(`✅ [${i + 1}/${filesToProcess.length}] Completed: ${filename}`);
+
+			} catch (error) {
+				console.error(`❌ [${i + 1}/${filesToProcess.length}] Failed: ${filename}`);
+				console.error("   Error:", error.message);
+				results.push({
+					filename,
+					success: false,
+					error: error.message
+				});
+			}
+		}
+
+		const successful = results.filter(r => r.success).length;
+		const failed = results.filter(r => !r.success).length;
+
+		console.log("\n✅ ========== BACKGROUND REMOVAL COMPLETE ==========");
+		console.log(`📊 Summary:`);
+		console.log(`   Total: ${filesToProcess.length}`);
+		console.log(`   Successful: ${successful}`);
+		console.log(`   Failed: ${failed}`);
+		console.log("===================================================\n");
+
+		res.json({
+			success: true,
+			totalFiles: filesToProcess.length,
+			processed: successful,
+			failed,
+			results
+		});
+
+	} catch (error) {
+		console.error("\n❌ ========== BACKGROUND REMOVAL ERROR ==========");
+		console.error("Error:", error.message);
+		console.error("Stack:", error.stack);
+		console.error("=================================================\n");
+
+		res.status(500).json({
+			success: false,
+			error: error.message
+		});
+	}
+});
+
+// Get list of images with background removed
+app.get("/no-background-images", async (req, res) => {
+	try {
+		const files = await fs.readdir('./processed/no-background');
+		const imageFiles = files.filter(f => f.endsWith('.png'));
+
+		const images = [];
+
+		for (const file of imageFiles) {
+			try {
+				const filePath = path.join('./processed/no-background', file);
+				const stats = await fs.stat(filePath);
+
+				// Try to get metadata
+				const originalFilename = file.replace('_no_bg.png', '_meta.json');
+				const metaPath = path.join('./processed/metadata', originalFilename);
+
+				let metadata = null;
+				try {
+					const metaContent = await fs.readFile(metaPath, 'utf-8');
+					metadata = JSON.parse(metaContent);
+				} catch (metaError) {
+					// Metadata not found, continue without it
+				}
+
+				images.push({
+					filename: file,
+					size: stats.size,
+					sizeFormatted: `${(stats.size / 1024).toFixed(1)} KB`,
+					createdAt: stats.mtime,
+					metadata
+				});
+			} catch (err) {
+				console.log(`Error reading file ${file}:`, err.message);
+			}
+		}
+
+		images.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+		res.json({
+			success: true,
+			totalImages: images.length,
+			images
+		});
+	} catch (error) {
+		res.status(500).json({
+			success: false,
+			error: error.message
+		});
+	}
+});
+
+// Test rembg service connectivity
+app.get("/test-rembg", async (req, res) => {
+	try {
+		console.log("🧪 Testing rembg service connection...");
+
+		const response = await fetch('http://localhost:5000/health');
+
+		if (response.ok) {
+			const data = await response.json();
+			console.log("✅ rembg service is healthy:", data);
+			res.json({
+				success: true,
+				status: 'connected',
+				serviceInfo: data
+			});
+		} else {
+			console.error("❌ rembg service returned error:", response.status);
+			res.json({
+				success: false,
+				status: 'error',
+				statusCode: response.status
+			});
+		}
+	} catch (error) {
+		console.error("❌ Cannot connect to rembg service:", error.message);
+		res.json({
+			success: false,
+			status: 'disconnected',
+			error: error.message,
+			hint: 'Is the rembg Docker container running? Try: docker-compose ps'
+		});
+	}
+});
+
 // Error handling middleware
 app.use((error, req, res, next) => {
 	if (error instanceof multer.MulterError) {
@@ -631,11 +913,4 @@ app.use((error, req, res, next) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
 	console.log(`🚀 Backend server running on http://localhost:${PORT}`);
-	// console.log(`📊 Step 3: File Upload + Image Processing`);
-	// console.log(`📁 Directories:`);
-	// console.log(`   - uploads/ (raw uploads)`);
-	// console.log(`   - processed/originals/ (backup)`);
-	// console.log(`   - processed/resized/ (2048px processed)`);
-	// console.log(`   - processed/metadata/ (processing info)`);
-	// console.log(`🔗 API endpoints ready`);
 });

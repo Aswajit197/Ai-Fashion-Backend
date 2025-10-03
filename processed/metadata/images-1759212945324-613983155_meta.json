@@ -1,0 +1,20 @@
+{
+  "originalFile": "images-1759212945324-613983155.jpg",
+  "processedFile": "images-1759212945324-613983155_processed.jpg",
+  "uploadId": "=",
+  "originalSize": {
+    "width": 1312,
+    "height": 1500,
+    "format": "jpeg",
+    "fileSize": 107826
+  },
+  "processedSize": {
+    "width": 1312,
+    "height": 1500,
+    "format": "jpeg",
+    "fileSize": 142120
+  },
+  "hash": "04750de2029ea24b6d41cff97861e73f",
+  "processedAt": "2025-09-30T06:30:27.786Z",
+  "processingTime": 305
+}
