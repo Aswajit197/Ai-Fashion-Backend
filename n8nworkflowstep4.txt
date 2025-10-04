@@ -1,0 +1,343 @@
+# n8n Workflow Setup - Complete Guide for Beginners
+
+## What is n8n?
+
+n8n is a workflow automation tool that connects different services together. Think of it like connecting LEGO blocks - each block (node) does one task, and you connect them to create an automated process.
+
+In your case: **Upload → Resize → Remove Background → Respond**
+
+---
+
+## Step 1: Access n8n
+
+1. Make sure Docker is running
+2. Open browser: http://localhost:5678
+3. Login with:
+   - Username: `admin`
+   - Password: `admin`
+
+---
+
+## Step 2: Create New Workflow
+
+1. Click **"Add workflow"** button (top right)
+2. You'll see an empty canvas
+3. This is where you'll add nodes
+
+---
+
+## Step 3: Add Webhook Node (Entry Point)
+
+This receives data from your backend when images are uploaded.
+
+### Adding the Node:
+1. Click the **"+"** button on the canvas
+2. Search for "Webhook"
+3. Click **"Webhook"**
+
+### Configuring the Webhook:
+1. **HTTP Method**: Select `POST`
+2. **Path**: Enter `process-upload`
+3. **Authentication**: Select `None`
+4. **Respond**: Select `Using 'Respond to Webhook' Node`
+
+**What this does:** Creates an endpoint at `http://localhost:5678/webhook/process-upload` that your backend can send data to.
+
+---
+
+## Step 4: Add Set Node (Data Preparation)
+
+This prepares and organizes the data before processing.
+
+### Adding the Node:
+1. Click the **"+"** button after the Webhook node
+2. Search for "Set"
+3. Click **"Set"**
+4. Connect the Webhook to Set (drag from the dot on Webhook to Set)
+
+### Configuring the Set:
+1. Click **"Add Value"**
+2. Select **"String"**
+3. **Name**: `uploadId`
+4. **Value**: Click in the value field, then click the **"Expression"** tab
+   - Enter: `{{ $json.uploadId }}`
+
+5. Add another value (click "Add Value"):
+   - Type: **String**
+   - **Name**: `totalFiles`
+   - **Value** (Expression): `{{ $json.totalFiles }}`
+
+6. Add another:
+   - Type: **String**
+   - **Name**: `receivedAt`
+   - **Value** (Expression): `{{ new Date().toISOString() }}`
+
+**What this does:** Extracts important information from the uploaded data and adds a timestamp.
+
+---
+
+## Step 5: Add HTTP Request Node (Process Images)
+
+This tells your backend to resize the images.
+
+### Adding the Node:
+1. Click **"+"** after Set node
+2. Search for "HTTP Request"
+3. Click **"HTTP Request"**
+4. Connect Set to HTTP Request
+
+### Configuring HTTP Request:
+1. **Method**: `POST`
+2. **URL**: `http://host.docker.internal:3000/process-images`
+   - **Important:** Use `host.docker.internal` not `localhost` (Docker networking)
+3. **Authentication**: `None`
+4. **Send Body**: Toggle ON
+5. **Body Content Type**: `JSON`
+6. **Specify Body**: `Using JSON`
+7. **JSON Body**: Click the field, switch to **Expression** tab:
+   ```json
+   {
+     "uploadId": "{{ $json.uploadId }}"
+   }
+   ```
+8. **Options** → **Timeout**: 30000 (30 seconds)
+
+**What this does:** Calls your backend's `/process-images` endpoint to resize images.
+
+---
+
+## Step 6: Add Another HTTP Request Node (Remove Background)
+
+This tells your backend to remove backgrounds.
+
+### Adding the Node:
+1. Click **"+"** after the first HTTP Request
+2. Add another "HTTP Request"
+3. Connect them
+
+### Configuring:
+1. **Method**: `POST`
+2. **URL**: `http://host.docker.internal:3000/remove-background`
+3. **Authentication**: `None`
+4. **Send Body**: Toggle ON
+5. **Body Content Type**: `JSON`
+6. **Specify Body**: `Using JSON`
+7. **JSON Body** (Expression):
+   ```json
+   {
+     "uploadId": "{{ $('Set').item.json.uploadId }}"
+   }
+   ```
+8. **Options** → **Timeout**: 60000 (60 seconds - background removal is slower)
+
+**What this does:** Calls your backend's `/remove-background` endpoint.
+
+---
+
+## Step 7: Add Respond to Webhook Node (Send Response)
+
+This sends a response back to your backend/frontend.
+
+### Adding the Node:
+1. Click **"+"** after the second HTTP Request
+2. Search for "Respond to Webhook"
+3. Click **"Respond to Webhook"**
+4. Connect it
+
+### Configuring:
+1. **Respond With**: `JSON`
+2. **Response Body**: Click field, switch to **Expression** tab:
+   ```json
+   {
+     "status": "success",
+     "uploadId": "{{ $('Set').item.json.uploadId }}",
+     "totalFiles": {{ $('Set').item.json.totalFiles }},
+     "processingComplete": true,
+     "backgroundRemovalComplete": true,
+     "message": "Images uploaded, resized, and backgrounds removed successfully"
+   }
+   ```
+
+**What this does:** Sends success message back to your frontend.
+
+---
+
+## Step 8: Connect All Nodes
+
+Your workflow should look like this:
+
+```
+[Webhook] → [Set] → [HTTP Request (Process)] → [HTTP Request (Remove BG)] → [Respond to Webhook]
+```
+
+Make sure all nodes are connected by dragging from the dot on the right of each node to the next node.
+
+---
+
+## Step 9: Save and Activate
+
+1. **Name your workflow**: Click "My workflow" at top, rename to "Image Processing Pipeline"
+2. **Save**: Click the save icon (top right)
+3. **Activate**: Toggle the switch in top-right corner to **ON**
+   - It should turn green and say "Active"
+
+**CRITICAL:** The workflow must be ACTIVE (not just saved) for webhooks to work!
+
+---
+
+## Step 10: Test Your Workflow
+
+### Get the Webhook URL:
+1. Click on the Webhook node
+2. Copy the "Test URL" or "Production URL"
+3. Should be: `http://localhost:5678/webhook/process-upload`
+
+### Test from your backend:
+```bash
+# Upload an image via your frontend
+# Or test directly:
+curl -X POST http://localhost:3000/upload-images \
+  -F "images=@test-image.jpg"
+```
+
+### Check n8n Execution:
+1. In n8n, click **"Executions"** (left sidebar)
+2. You should see your workflow execution
+3. Click on it to see details
+4. Green checkmarks = success
+5. Red X = error (click to see what failed)
+
+---
+
+## Understanding the Flow
+
+**What happens when you upload an image:**
+
+1. **Frontend** uploads image → **Backend** saves to `uploads/`
+2. **Backend** sends metadata → **n8n Webhook** receives it
+3. **Set node** organizes the data
+4. **HTTP Request 1** → Backend resizes image → saves to `processed/resized/`
+5. **HTTP Request 2** → Backend removes background → saves to `processed/no-background/`
+6. **Respond node** → Sends success message back
+7. **Frontend** shows "Processing complete!"
+
+---
+
+## Common Issues & Solutions
+
+### Issue: "Workflow could not be started"
+**Solution:** 
+- Make sure workflow is ACTIVATED (green toggle)
+- Check the webhook path is exactly `process-upload`
+
+### Issue: "Connection refused" in HTTP Request
+**Solution:**
+- Change `localhost` to `host.docker.internal` in URL
+- Make sure your backend server is running
+
+### Issue: Timeout errors
+**Solution:**
+- Increase timeout in HTTP Request node options
+- Background removal takes 5-60 seconds depending on image size
+
+### Issue: "Cannot find uploaded files"
+**Solution:**
+- Make sure the uploadId is being passed correctly
+- Check backend logs to see if files exist
+
+---
+
+## Visual Reference: Node Configuration
+
+### Webhook Node
+```
+┌─────────────────────────┐
+│      Webhook            │
+├─────────────────────────┤
+│ Method: POST            │
+│ Path: process-upload    │
+│ Auth: None              │
+│ Respond: Using 'Respond │
+│          to Webhook'    │
+└─────────────────────────┘
+```
+
+### HTTP Request Node (Process)
+```
+┌─────────────────────────┐
+│   HTTP Request          │
+├─────────────────────────┤
+│ Method: POST            │
+│ URL: host.docker.       │
+│      internal:3000/     │
+│      process-images     │
+│ Body: JSON              │
+│ {"uploadId": "..."}     │
+└─────────────────────────┘
+```
+
+### HTTP Request Node (Remove BG)
+```
+┌─────────────────────────┐
+│   HTTP Request          │
+├─────────────────────────┤
+│ Method: POST            │
+│ URL: host.docker.       │
+│      internal:3000/     │
+│      remove-background  │
+│ Body: JSON              │
+│ {"uploadId": "..."}     │
+└─────────────────────────┘
+```
+
+---
+
+## Testing Checklist
+
+Before considering it complete, verify:
+
+- [ ] Workflow shows "Active" (green)
+- [ ] Webhook URL is accessible
+- [ ] Can upload image via frontend
+- [ ] n8n Executions shows successful run
+- [ ] Images appear in `uploads/` folder
+- [ ] Resized images in `processed/resized/`
+- [ ] Background-removed images in `processed/no-background/`
+- [ ] Frontend shows success message
+
+---
+
+## Next Steps After n8n Setup
+
+Once n8n is working:
+
+1. **Add error handling**: Add "IF" nodes to check if processing succeeded
+2. **Add notifications**: Send email/Slack when processing completes
+3. **Add retry logic**: Automatically retry if background removal fails
+4. **Monitor executions**: Check n8n regularly for failed workflows
+
+But for now, get the basic workflow working first!
+
+---
+
+## Quick Reference: Important URLs
+
+- **n8n Dashboard**: http://localhost:5678
+- **Webhook Endpoint**: http://localhost:5678/webhook/process-upload
+- **Backend API**: http://localhost:3000
+- **Frontend**: http://localhost:3001
+
+---
+
+## Key Concept: Why Use n8n?
+
+You might wonder "Why not just call `/remove-background` directly from the upload endpoint?"
+
+n8n provides:
+- **Visual workflow** - See the entire process
+- **Error tracking** - Know exactly where things fail
+- **Retry logic** - Automatic retries on failure
+- **Scalability** - Easy to add more steps later
+- **Monitoring** - View all executions in one place
+
+It's like having a supervisor watching your entire image processing pipeline!

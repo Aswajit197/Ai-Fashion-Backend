@@ -30,10 +30,10 @@ createDirectories();
 // Create no-background directory
 const createNoBackgroundDir = async () => {
 	try {
-		await fs.mkdir('./processed/no-background', { recursive: true });
-		console.log('✅ ./processed/no-background directory ready');
+		await fs.mkdir("./processed/no-background", { recursive: true });
+		console.log("✅ ./processed/no-background directory ready");
 	} catch (error) {
-		console.log('📁 ./processed/no-background already exists');
+		console.log("📁 ./processed/no-background already exists");
 	}
 };
 createNoBackgroundDir();
@@ -131,7 +131,7 @@ app.post("/upload-images", upload.array("images", 10), async (req, res) => {
 				ip: req.ip,
 			},
 		};
-		console.log(uploadData)
+		console.log(uploadData);
 
 		console.log("📨 Sending file metadata to n8n...");
 
@@ -240,136 +240,137 @@ app.get("/uploads", async (req, res) => {
 // ========================================
 
 // Process uploaded images
-app.post("/process-images", async (req, res) => {
-	try {
-		const { uploadId, filenames } = req.body;
+// app.post("/process-images", async (req, res) => {
+// 	try {
+// 		const { uploadId, filenames } = req.body;
 
-		console.log(`🔄 Starting image processing...`);
+// 		console.log(`🔄 Starting image processing...`);
 
-		// Get files to process
-		let filesToProcess;
-		if (filenames && Array.isArray(filenames)) {
-			filesToProcess = filenames;
-		} else {
-			// Process all files in uploads directory
-			filesToProcess = await fs.readdir("./uploads");
-		}
+// 		// Get files to process
+// 		let filesToProcess;
+// 		if (filenames && Array.isArray(filenames)) {
+// 			filesToProcess = filenames;
+// 		} else {
+// 			// Process all files in uploads directory
+// 			filesToProcess = await fs.readdir("./uploads");
+// 		}
 
-		const results = [];
-		const hashes = new Set();
-		const duplicates = [];
+// 		const results = [];
+// 		const hashes = new Set();
+// 		const duplicates = [];
 
-		for (const filename of filesToProcess) {
-			try {
-				const inputPath = path.join("./uploads", filename);
-				const originalPath = path.join("./processed/originals", filename);
-				const processedFilename = filename.replace(/\.(jpg|jpeg|png|webp|gif)$/i, "_processed.jpg");
-				const processedPath = path.join("./processed/resized", processedFilename);
-				const metadataPath = path.join("./processed/metadata", filename.replace(/\.(jpg|jpeg|png|webp|gif)$/i, "_meta.json"));
+// 		for (const filename of filesToProcess) {
+// 			try {
+// 				const inputPath = path.join("./uploads", filename);
+// 				const originalPath = path.join("./processed/originals", filename);
+// 				const processedFilename = filename.replace(/\.(jpg|jpeg|png|webp|gif)$/i, "_processed.jpg");
+// 				const processedPath = path.join("./processed/resized", processedFilename);
+// 				const metadataPath = path.join("./processed/metadata", filename.replace(/\.(jpg|jpeg|png|webp|gif)$/i, "_meta.json"));
 
-				// Check if file is corrupted
-				const corrupted = await isImageCorrupted(inputPath);
-				if (corrupted) {
-					results.push({
-						filename,
-						success: false,
-						error: "Image file is corrupted or invalid",
-					});
-					continue;
-				}
+// 				// Check if file is corrupted
+// 				const corrupted = await isImageCorrupted(inputPath);
+// 				if (corrupted) {
+// 					results.push({
+// 						filename,
+// 						success: false,
+// 						error: "Image file is corrupted or invalid",
+// 					});
+// 					continue;
+// 				}
 
-				// Generate hash for duplicate detection
-				const hash = await generateImageHash(inputPath);
-				if (hashes.has(hash)) {
-					duplicates.push(filename);
-					results.push({
-						filename,
-						success: false,
-						error: "Duplicate image detected",
-						hash,
-					});
-					continue;
-				}
-				hashes.add(hash);
+// 				// Generate hash for duplicate detection
+// 				const hash = await generateImageHash(inputPath);
+// 				if (hashes.has(hash)) {
+// 					duplicates.push(filename);
+// 					results.push({
+// 						filename,
+// 						success: false,
+// 						error: "Duplicate image detected",
+// 						hash,
+// 					});
+// 					continue;
+// 				}
+// 				hashes.add(hash);
 
-				// Copy original to backup
-				await fs.copyFile(inputPath, originalPath);
+// 				// Copy original to backup
+// 				await fs.copyFile(inputPath, originalPath);
 
-				// Process image
-				const processResult = await processImage(inputPath, processedPath);
+// 				// Process image
+// 				const processResult = await processImage(inputPath, processedPath);
 
-				if (!processResult.success) {
-					results.push({
-						filename,
-						success: false,
-						error: processResult.error,
-					});
-					continue;
-				}
+// 				if (!processResult.success) {
+// 					results.push({
+// 						filename,
+// 						success: false,
+// 						error: processResult.error,
+// 					});
+// 					continue;
+// 				}
 
-				// Save metadata
-				const metadata = {
-					originalFile: filename,
-					processedFile: processedFilename,
-					uploadId: uploadId || "unknown",
-					originalSize: processResult.original,
-					processedSize: processResult.processed,
-					hash,
-					processedAt: new Date().toISOString(),
-					processingTime: processResult.processingTime,
-				};
+// 				// Save metadata
+// 				const metadata = {
+// 					originalFile: filename,
+// 					processedFile: processedFilename,
+// 					uploadId: uploadId || "unknown",
+// 					originalSize: processResult.original,
+// 					processedSize: processResult.processed,
+// 					hash,
+// 					processedAt: new Date().toISOString(),
+// 					processingTime: processResult.processingTime,
+// 				};
 
-				await saveMetadata(metadataPath, metadata);
+// 				await saveMetadata(metadataPath, metadata);
 
-				results.push({
-					filename,
-					success: true,
-					...processResult,
-					hash,
-					paths: {
-						original: originalPath,
-						processed: processedPath,
-						metadata: metadataPath,
-					},
-				});
+// 				results.push({
+// 					filename,
+// 					success: true,
+// 					...processResult,
+// 					hash,
+// 					paths: {
+// 						original: originalPath,
+// 						processed: processedPath,
+// 						metadata: metadataPath,
+// 					},
+// 				});
 
-				console.log(`✅ Processed: ${filename}`);
-			} catch (error) {
-				results.push({
-					filename,
-					success: false,
-					error: error.message,
-				});
-				console.error(`❌ Failed to process ${filename}:`, error.message);
-			}
-		}
+// 				console.log(`✅ Processed: ${filename}`);
+// 			} catch (error) {
+// 				results.push({
+// 					filename,
+// 					success: false,
+// 					error: error.message,
+// 				});
+// 				console.error(`❌ Failed to process ${filename}:`, error.message);
+// 			}
+// 		}
 
-		const successful = results.filter((r) => r.success).length;
-		const failed = results.filter((r) => !r.success).length;
+// 		const successful = results.filter((r) => r.success).length;
+// 		const failed = results.filter((r) => !r.success).length;
 
-		res.json({
-			success: true,
-			uploadId: uploadId || "batch",
-			totalFiles: filesToProcess.length,
-			processed: successful,
-			failed,
-			duplicates: duplicates.length,
-			duplicateFiles: duplicates,
-			results,
-		});
-	} catch (error) {
-		console.error("❌ Processing error:", error);
-		res.status(500).json({
-			success: false,
-			error: error.message,
-		});
-	}
-});
+// 		res.json({
+// 			success: true,
+// 			uploadId: uploadId || "batch",
+// 			totalFiles: filesToProcess.length,
+// 			processed: successful,
+// 			failed,
+// 			duplicates: duplicates.length,
+// 			duplicateFiles: duplicates,
+// 			results,
+// 		});
+// 	} catch (error) {
+// 		console.error("❌ Processing error:", error);
+// 		res.status(500).json({
+// 			success: false,
+// 			error: error.message,
+// 		});
+// 	}
+// });
 
 // Get list of processed images
 // Replace the /process-images endpoint in your server.js with this version
 
 app.post("/process-images", async (req, res) => {
+	console.log("\n🚀 ========== Entering IMAGE PROCESSING ==========");
 	try {
 		const { uploadId, filenames } = req.body;
 
@@ -420,7 +421,7 @@ app.post("/process-images", async (req, res) => {
 					results.push({
 						filename,
 						success: false,
-						error: "Input file not found"
+						error: "Input file not found",
 					});
 					continue;
 				}
@@ -443,7 +444,7 @@ app.post("/process-images", async (req, res) => {
 				console.log("🔐 Generating hash...");
 				const hash = await generateImageHash(inputPath);
 				console.log(`   Hash: ${hash.substring(0, 16)}...`);
-				
+
 				if (hashes.has(hash)) {
 					console.warn("⚠️  Duplicate detected!");
 					duplicates.push(filename);
@@ -489,7 +490,7 @@ app.post("/process-images", async (req, res) => {
 					results.push({
 						filename,
 						success: false,
-						error: "Processed file not created"
+						error: "Processed file not created",
 					});
 					continue;
 				}
@@ -527,7 +528,6 @@ app.post("/process-images", async (req, res) => {
 				});
 
 				console.log(`✅ [${i + 1}/${filesToProcess.length}] Successfully processed: ${filename}`);
-
 			} catch (error) {
 				console.error(`❌ [${i + 1}/${filesToProcess.length}] Error processing ${filename}:`, error.message);
 				console.error("   Stack:", error.stack);
@@ -565,7 +565,7 @@ app.post("/process-images", async (req, res) => {
 		console.error("Error:", error.message);
 		console.error("Stack:", error.stack);
 		console.error("=========================================\n");
-		
+
 		res.status(500).json({
 			success: false,
 			error: error.message,
@@ -609,14 +609,11 @@ app.post("/validate-image", upload.single("image"), async (req, res) => {
 	}
 });
 
-
-
 // Remove background from processed images
 app.post("/remove-background", async (req, res) => {
+	console.log("\n🎨 ========== STARTING BACKGROUND REMOVAL ==========");
 	try {
 		const { filenames } = req.body;
-
-		console.log("\n🎨 ========== STARTING BACKGROUND REMOVAL ==========");
 
 		// Get files to process
 		let filesToProcess;
@@ -625,21 +622,21 @@ app.post("/remove-background", async (req, res) => {
 			console.log(`📁 Processing specific files (${filenames.length}):`, filenames);
 		} else {
 			// Process all resized images
-			const resizedFiles = await fs.readdir('./processed/resized');
-			filesToProcess = resizedFiles.filter(f => f.endsWith('.jpg') || f.endsWith('.jpeg') || f.endsWith('.png'));
+			const resizedFiles = await fs.readdir("./processed/resized");
+			filesToProcess = resizedFiles.filter((f) => f.endsWith(".jpg") || f.endsWith(".jpeg") || f.endsWith(".png"));
 			console.log(`📁 Processing all resized images (${filesToProcess.length})`);
 		}
 
 		if (filesToProcess.length === 0) {
 			return res.json({
 				success: false,
-				error: 'No images found to process. Make sure images are resized first.',
-				hint: 'Run POST /process-images first'
+				error: "No images found to process. Make sure images are resized first.",
+				hint: "Run POST /process-images first",
 			});
 		}
 
 		const results = [];
-		const FormData = (await import('form-data')).default;
+		const FormData = (await import("form-data")).default;
 
 		console.log(`\n🔄 Starting background removal for ${filesToProcess.length} files...\n`);
 
@@ -649,9 +646,9 @@ app.post("/remove-background", async (req, res) => {
 			console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
 			try {
-				const inputPath = path.join('./processed/resized', filename);
-				const outputFilename = filename.replace(/\.(jpg|jpeg)$/i, '_no_bg.png');
-				const outputPath = path.join('./processed/no-background', outputFilename);
+				const inputPath = path.join("./processed/resized", filename);
+				const outputFilename = filename.replace(/\.(jpg|jpeg)$/i, "_no_bg.png");
+				const outputPath = path.join("./processed/no-background", outputFilename);
 
 				console.log("📂 Paths:");
 				console.log("   Input:", inputPath);
@@ -666,7 +663,7 @@ app.post("/remove-background", async (req, res) => {
 					results.push({
 						filename,
 						success: false,
-						error: 'Input file not found'
+						error: "Input file not found",
 					});
 					continue;
 				}
@@ -674,9 +671,9 @@ app.post("/remove-background", async (req, res) => {
 				// Check if rembg service is available
 				console.log("🔍 Checking rembg service...");
 				try {
-					const healthCheck = await fetch('http://localhost:5000/health');
+					const healthCheck = await fetch("http://localhost:5000/health");
 					if (!healthCheck.ok) {
-						throw new Error('Service not healthy');
+						throw new Error("Service not healthy");
 					}
 					console.log("✅ rembg service is available");
 				} catch (error) {
@@ -684,7 +681,7 @@ app.post("/remove-background", async (req, res) => {
 					results.push({
 						filename,
 						success: false,
-						error: 'rembg service not available. Is Docker container running?'
+						error: "rembg service not available. Is Docker container running?",
 					});
 					continue;
 				}
@@ -692,19 +689,19 @@ app.post("/remove-background", async (req, res) => {
 				// Prepare form data
 				const formData = new FormData();
 				const fileStream = await fs.readFile(inputPath);
-				formData.append('image', fileStream, {
+				formData.append("image", fileStream, {
 					filename: filename,
-					contentType: 'image/jpeg'
+					contentType: "image/jpeg",
 				});
 
 				console.log("🚀 Sending to rembg service...");
 				const startTime = Date.now();
 
 				// Call rembg service
-				const response = await fetch('http://localhost:5000/remove-background', {
-					method: 'POST',
+				const response = await fetch("http://localhost:5000/remove-background", {
+					method: "POST",
 					body: formData,
-					headers: formData.getHeaders()
+					headers: formData.getHeaders(),
 				});
 
 				if (!response.ok) {
@@ -726,11 +723,11 @@ app.post("/remove-background", async (req, res) => {
 				console.log(`   Output size: ${(outputStats.size / 1024).toFixed(1)} KB`);
 
 				// Update metadata
-				const metaFilename = filename.replace(/\.(jpg|jpeg)$/i, '_meta.json');
-				const metaPath = path.join('./processed/metadata', metaFilename);
+				const metaFilename = filename.replace(/\.(jpg|jpeg)$/i, "_meta.json");
+				const metaPath = path.join("./processed/metadata", metaFilename);
 
 				try {
-					const metaContent = await fs.readFile(metaPath, 'utf-8');
+					const metaContent = await fs.readFile(metaPath, "utf-8");
 					const metadata = JSON.parse(metaContent);
 					metadata.noBackgroundFile = outputFilename;
 					metadata.backgroundRemovalTime = processingTime;
@@ -747,24 +744,23 @@ app.post("/remove-background", async (req, res) => {
 					outputFilename,
 					outputPath,
 					processingTime,
-					outputSize: outputStats.size
+					outputSize: outputStats.size,
 				});
 
 				console.log(`✅ [${i + 1}/${filesToProcess.length}] Completed: ${filename}`);
-
 			} catch (error) {
 				console.error(`❌ [${i + 1}/${filesToProcess.length}] Failed: ${filename}`);
 				console.error("   Error:", error.message);
 				results.push({
 					filename,
 					success: false,
-					error: error.message
+					error: error.message,
 				});
 			}
 		}
 
-		const successful = results.filter(r => r.success).length;
-		const failed = results.filter(r => !r.success).length;
+		const successful = results.filter((r) => r.success).length;
+		const failed = results.filter((r) => !r.success).length;
 
 		console.log("\n✅ ========== BACKGROUND REMOVAL COMPLETE ==========");
 		console.log(`📊 Summary:`);
@@ -778,9 +774,8 @@ app.post("/remove-background", async (req, res) => {
 			totalFiles: filesToProcess.length,
 			processed: successful,
 			failed,
-			results
+			results,
 		});
-
 	} catch (error) {
 		console.error("\n❌ ========== BACKGROUND REMOVAL ERROR ==========");
 		console.error("Error:", error.message);
@@ -789,7 +784,7 @@ app.post("/remove-background", async (req, res) => {
 
 		res.status(500).json({
 			success: false,
-			error: error.message
+			error: error.message,
 		});
 	}
 });
@@ -797,23 +792,23 @@ app.post("/remove-background", async (req, res) => {
 // Get list of images with background removed
 app.get("/no-background-images", async (req, res) => {
 	try {
-		const files = await fs.readdir('./processed/no-background');
-		const imageFiles = files.filter(f => f.endsWith('.png'));
+		const files = await fs.readdir("./processed/no-background");
+		const imageFiles = files.filter((f) => f.endsWith(".png"));
 
 		const images = [];
 
 		for (const file of imageFiles) {
 			try {
-				const filePath = path.join('./processed/no-background', file);
+				const filePath = path.join("./processed/no-background", file);
 				const stats = await fs.stat(filePath);
 
 				// Try to get metadata
-				const originalFilename = file.replace('_no_bg.png', '_meta.json');
-				const metaPath = path.join('./processed/metadata', originalFilename);
+				const originalFilename = file.replace("_no_bg.png", "_meta.json");
+				const metaPath = path.join("./processed/metadata", originalFilename);
 
 				let metadata = null;
 				try {
-					const metaContent = await fs.readFile(metaPath, 'utf-8');
+					const metaContent = await fs.readFile(metaPath, "utf-8");
 					metadata = JSON.parse(metaContent);
 				} catch (metaError) {
 					// Metadata not found, continue without it
@@ -824,7 +819,7 @@ app.get("/no-background-images", async (req, res) => {
 					size: stats.size,
 					sizeFormatted: `${(stats.size / 1024).toFixed(1)} KB`,
 					createdAt: stats.mtime,
-					metadata
+					metadata,
 				});
 			} catch (err) {
 				console.log(`Error reading file ${file}:`, err.message);
@@ -836,12 +831,12 @@ app.get("/no-background-images", async (req, res) => {
 		res.json({
 			success: true,
 			totalImages: images.length,
-			images
+			images,
 		});
 	} catch (error) {
 		res.status(500).json({
 			success: false,
-			error: error.message
+			error: error.message,
 		});
 	}
 });
@@ -851,31 +846,31 @@ app.get("/test-rembg", async (req, res) => {
 	try {
 		console.log("🧪 Testing rembg service connection...");
 
-		const response = await fetch('http://localhost:5000/health');
+		const response = await fetch("http://localhost:5000/health");
 
 		if (response.ok) {
 			const data = await response.json();
 			console.log("✅ rembg service is healthy:", data);
 			res.json({
 				success: true,
-				status: 'connected',
-				serviceInfo: data
+				status: "connected",
+				serviceInfo: data,
 			});
 		} else {
 			console.error("❌ rembg service returned error:", response.status);
 			res.json({
 				success: false,
-				status: 'error',
-				statusCode: response.status
+				status: "error",
+				statusCode: response.status,
 			});
 		}
 	} catch (error) {
 		console.error("❌ Cannot connect to rembg service:", error.message);
 		res.json({
 			success: false,
-			status: 'disconnected',
+			status: "disconnected",
 			error: error.message,
-			hint: 'Is the rembg Docker container running? Try: docker-compose ps'
+			hint: "Is the rembg Docker container running? Try: docker-compose ps",
 		});
 	}
 });

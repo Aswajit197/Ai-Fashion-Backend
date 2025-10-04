@@ -1,0 +1,20 @@
+{
+  "originalFile": "images-1759494130054-232000150.jpeg",
+  "processedFile": "images-1759494130054-232000150_processed.jpg",
+  "uploadId": "1759486318973",
+  "originalSize": {
+    "width": 3000,
+    "height": 1996,
+    "format": "jpeg",
+    "fileSize": 1926822
+  },
+  "processedSize": {
+    "width": 2048,
+    "height": 1363,
+    "format": "jpeg",
+    "fileSize": 1339632
+  },
+  "hash": "5bf33bb6b773bfc8df730366bbb18745",
+  "processedAt": "2025-10-03T15:13:43.993Z",
+  "processingTime": 1412
+}
