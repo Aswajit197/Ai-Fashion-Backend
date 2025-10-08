@@ -1,3 +1,95 @@
+
+1️⃣ Webhook Node
+
+Current URL: http://localhost:5678/webhook/process-upload
+
+Change to: nothing inside n8n — the webhook path stays process-upload.
+
+Access from frontend/backend: http://124.123.18.19:5678/webhook/process-upload
+
+Everything else in this node stays the same.
+
+2️⃣ HTTP Request Node (Process Images)
+
+Current URL (Docker setup): http://host.docker.internal:3000/process-images
+
+New URL (server setup): http://124.123.18.19:3000/process-images
+
+JSON Body (Expression) stays the same if you’re using the Set node:
+
+{
+  "uploadId": "{{ $json.uploadId }}"
+}
+
+
+Important: No more host.docker.internal because n8n is now outside Docker. Use your server's public/private IP or domain.
+
+3️⃣ HTTP Request Node (Remove Background)
+
+Current URL: http://host.docker.internal:3000/remove-background
+
+New URL: http://124.123.18.19:3000/remove-background
+
+JSON Body (Expression):
+
+{
+  "uploadId": "{{ $json.uploadId }}"
+}
+
+
+Tip: You can remove the $(Set) reference and just use $json.uploadId because this will pick up the current item from the previous node automatically.
+
+4️⃣ Respond to Webhook Node
+
+No URL changes needed here. The Expression JSON body also works fine with $json.uploadId and $json.totalFiles:
+
+{
+  "status": "success",
+  "uploadId": "{{ $json.uploadId }}",
+  "totalFiles": {{ $json.totalFiles }},
+  "processingComplete": true,
+  "backgroundRemovalComplete": true,
+  "message": "Images uploaded, resized, and backgrounds removed successfully"
+}
+
+5️⃣ Summary of Key Changes
+Node	Docker URL (Old)	Server URL (New)
+HTTP Request (Process)	http://host.docker.internal:3000/process-images	http://124.123.18.19:3000/process-images
+HTTP Request (Remove BG)	http://host.docker.internal:3000/remove-background	http://124.123.18.19:3000/remove-background
+Webhook (access externally)	http://localhost:5678/webhook/...	http://124.123.18.19:5678/webhook/...
+
+Expressions for JSON bodies:
+
+$json.uploadId
+
+$json.totalFiles
+
+No need for $('Set') references unless you have multiple items in your flow.
+
+✅ After making these changes:
+
+Save and activate your workflow.
+
+Test by sending a request to http://124.123.18.19:5678/webhook/process-upload.
+
+Make sure your backend APIs (/process-images and /remove-background) are accessible from the server running n8n.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # n8n Workflow Setup - Complete Guide for Beginners
 
 ## What is n8n?

@@ -1,0 +1,372 @@
+ComfyUI Manager Setup Guide
+What You Have
+✅ ComfyUI Manager V3.37 installed
+✅ ComfyUI running at http://124.123.18.19:8188/
+✅ Keywords: v0.3.62
+
+Step 1: Install Stable Diffusion Model via Manager
+1.1 Open Model Manager
+From the ComfyUI Manager window (which you have open):
+
+Click "Model Manager" button
+
+1.2 Download Checkpoint Model
+You'll see a list of available models. For fashion/product photography, choose one:
+Recommended Option 1: Realistic Vision V5.1
+
+Best for realistic products
+Size: ~2GB
+Good quality/speed balance
+Steps:
+
+In Model Manager, search for: Realistic Vision
+Find: "Realistic Vision V5.1"
+Click "Install" next to it
+Wait for download (2-4GB, takes 5-15 minutes depending on connection)
+
+Recommended Option 2: Stable Diffusion 1.5
+
+General purpose
+Size: ~4GB
+More versatile
+
+Steps:
+
+Search for: SD 1.5
+Find: "v1-5-pruned-emaonly.safetensors"
+Click "Install"
+
+1.3 Verify Installation
+After download completes:
+
+Close Model Manager
+Close ComfyUI Manager
+Look in left sidebar → checkpoints folder
+You should see your model listed (with 0 next to it initially)
+Refresh the page
+Number should update to 1 or more
+
+Step 2: Install Required Custom Nodes
+Custom nodes add extra functionality. You need some for product photography workflows.
+2.1 Install Missing Nodes
+
+In ComfyUI Manager, click "Install Missing Custom Nodes"
+This automatically detects and installs nodes needed for most workflows
+
+2.2 Install Specific Useful Nodes
+Click "Custom Nodes Manager", then search and install:
+Essential for Product Photography:
+
+ComfyUI-Impact-Pack
+
+Advanced image processing
+Search: "Impact Pack"
+Click Install
+
+ComfyUI-Manager (already installed ✓)
+ComfyUI-Custom-Scripts
+
+Useful utilities
+Search: "Custom Scripts"
+Click Install
+
+Optional but Useful:
+
+ControlNet Preprocessors
+
+For precise product positioning
+Search: "ControlNet"
+Install "comfyui_controlnet_aux"
+
+Image Resize Node
+
+Better image scaling
+Search: "Image Resize"
+
+2.3 Restart After Installation
+After installing custom nodes:
+
+Click "Restart" button in ComfyUI Manager
+Wait 30 seconds for ComfyUI to reload
+Refresh your browser
+
+Step 3: Create Your First Workflow
+Now let's create a simple text-to-image workflow for product generation.
+3.1 Start Fresh
+
+Close the Manager window
+You'll see the blank canvas
+Right-click anywhere → "Add Node"
+
+3.2 Add Required Nodes
+Add these nodes in order:
+Node 1: Load Checkpoint
+
+Right-click → Add Node → loaders → Load Checkpoint
+In the node, select your downloaded model from dropdown
+This loads the AI model
+
+Node 2: CLIP Text Encode (Positive)
+
+Right-click → Add Node → conditioning → CLIP Text Encode (Prompt)
+This is for your main prompt (what you want)
+Example: "professional product photo of a t-shirt, white background, studio lighting"
+
+Node 3: CLIP Text Encode (Negative)
+
+Add another CLIP Text Encode (Prompt)
+This is for negative prompt (what you don't want)
+Example: "blurry, low quality, distorted, watermark"
+
+Node 4: Empty Latent Image
+
+Right-click → Add Node → latent → Empty Latent Image
+Set dimensions:
+
+width: 512
+height: 512
+
+This defines output size
+
+Node 5: KSampler
+
+Right-click → Add Node → sampling → KSampler
+This does the actual AI generation
+Settings:
+
+seed: random (or specific number for reproducibility)
+steps: 20 (higher = better quality, slower)
+cfg: 7.0 (how strictly to follow prompt)
+sampler_name: euler (good default)
+
+Node 6: VAE Decode
+
+Right-click → Add Node → latent → VAE Decode
+Converts AI output to visible image
+
+Node 7: Save Image
+
+Right-click → Add Node → image → Save Image
+Saves the final result
+
+3.3 Connect the Nodes
+Connect them in this order:
+Load Checkpoint:
+
+- MODEL → KSampler (model input)
+- CLIP → both CLIP Text Encode nodes
+- VAE → VAE Decode
+
+CLIP Text Encode (Positive):
+
+- CONDITIONING → KSampler (positive input)
+
+CLIP Text Encode (Negative):
+
+- CONDITIONING → KSampler (negative input)
+
+Empty Latent Image:
+
+- LATENT → KSampler (latent_image input)
+
+KSampler:
+
+- LATENT → VAE Decode (samples input)
+
+VAE Decode:
+
+- IMAGE → Save Image
+  Visual Flow:
+  [Load Checkpoint] ──model──> [KSampler] ──latent──> [VAE Decode] ──image──> [Save Image]
+  │ ↑
+  └─clip─> [CLIP Pos] ──────┤
+  └─clip─> [CLIP Neg] ──────┘
+
+[Empty Latent] ──────────────────┘
+3.4 Save Your Workflow
+
+Click the gear icon (⚙️) or menu
+Save → Save As
+Name it: fashion-product-basic.json
+
+Step 4: Generate Your First Image
+4.1 Set Your Prompt
+In CLIP Text Encode (Positive), enter:
+professional product photo, red t-shirt, white background, studio lighting, high quality, commercial photography
+In CLIP Text Encode (Negative), enter:
+blurry, low quality, distorted, wrinkled, dirty, watermark, text, person
+4.2 Generate
+
+Click "Queue Prompt" button (top right)
+Watch the progress bar
+First generation takes 60-120 seconds (model loading)
+Subsequent generations: 10-30 seconds
+
+4.3 View Result
+
+Image appears in the Save Image node
+Also saved to: ComfyUI/output/ folder
+Click on image to enlarge
+
+Step 5: Load Pre-made Workflows
+Instead of building from scratch, use templates:
+5.1 Access Workflow Gallery
+
+Open ComfyUI Manager
+Click "Workflow Gallery" dropdown
+Browse available workflows
+
+5.2 Download Fashion/Product Workflows
+Search for:
+
+"product photography"
+"commercial photo"
+"studio photo"
+"e-commerce"
+
+5.3 Load Workflow
+
+Click on a workflow you like
+Click "Import" or "Load"
+The workflow appears on canvas
+Modify prompts for your needs
+
+Step 6: Connect to Your Backend
+Now that ComfyUI is set up, connect it to your Node.js backend.
+6.1 Get Your Workflow JSON
+
+With your workflow open
+Click menu → "Save (API Format)"
+This gives you the JSON that your backend needs
+
+6.2 Use in Your Backend
+The API format workflow is what you send to ComfyUI from your Node.js code (from the guide I provided earlier).
+Example:
+javascript// Your backend sends this workflow to ComfyUI
+const workflow = {
+// ... the API format JSON you just saved
+};
+
+const response = await fetch('http://124.123.18.19:8188/prompt', {
+method: 'POST',
+body: JSON.stringify({ prompt: workflow })
+});
+
+Step 7: Install ControlNet (Optional - Advanced)
+For precise product positioning and composition:
+7.1 Install ControlNet Models
+
+Open ComfyUI Manager
+Click "Model Manager"
+Search: controlnet
+Install:
+
+"control_v11p_sd15_canny" (edge detection)
+"control_v11p_sd15_openpose" (pose detection)
+
+7.2 Install ControlNet Nodes
+
+Open "Custom Nodes Manager"
+Search: controlnet
+Install: "comfyui_controlnet_aux"
+Restart ComfyUI
+
+Common Fashion/Product Prompts
+For Apparel:
+Positive: professional fashion photography, [item], clean white background, studio lighting, high quality, commercial photo, sharp details, no wrinkles
+Negative: blurry, low quality, distorted, dirty, wrinkled, watermark, text, low resolution
+For Shoes:
+Positive: professional product photo of shoes, white background, studio lighting, high detail, commercial photography, clean, new condition
+Negative: worn, dirty, blurry, distorted, low quality, dark, shadows
+For Accessories:
+Positive: luxury product photography, [item], macro detail, professional lighting, high end, commercial photo, sharp focus
+Negative: blurry, cheap looking, low quality, dirty, distorted
+
+Troubleshooting
+Issue: "Model not found"
+Solution:
+
+Check checkpoints folder has models
+Refresh ComfyUI page
+Redownload model via Model Manager
+
+Issue: Generation fails
+Solution:
+
+Check all nodes are connected properly
+Verify model is selected in Load Checkpoint
+Check error message in browser console (F12)
+
+Issue: Very slow generation
+Solution:
+
+Reduce steps (20 instead of 50)
+Reduce image size (512x512 instead of 1024x1024)
+Check if GPU is being used (CPU is much slower)
+
+Issue: Out of memory
+Solution:
+
+Reduce image dimensions
+Reduce batch size to 1
+Close other applications
+Consider smaller model (SD 1.5 vs SDXL)
+
+Recommended Workflow for Your Fashion Pipeline
+Workflow 1: Product Variation Generator
+Purpose: Generate different angles/styles of same product
+Input: Text prompt + reference image
+Output: Multiple variations
+Use Case: Create catalog images from one photo
+Workflow 2: Background Changer
+Purpose: Change background while keeping product
+Input: Product image (background removed from Step 4)
+Output: Product on different backgrounds
+Use Case: Studio → Lifestyle photos
+Workflow 3: Color Variations
+Purpose: Change product colors
+Input: Base product image + color prompt
+Output: Same product in different colors
+Use Case: Show color options without physical samples
+
+Integration with Your Backend
+Once workflows are ready, your backend code structure:
+javascript// 1. User uploads image
+POST /upload-images
+
+// 2. Process and remove background (Steps 3-4)
+POST /process-images
+POST /remove-background
+
+// 3. Generate AI variations (Step 5)
+POST /generate-variations
+→ Sends workflow to ComfyUI
+→ Returns prompt_id
+
+// 4. Check generation status
+GET /generation-status/:prompt_id
+→ Returns progress and results
+
+// 5. Retrieve generated images
+GET /generated-images
+→ Lists all AI-generated variations
+
+Next Steps
+
+✅ Install model via Model Manager (Realistic Vision or SD 1.5)
+✅ Create basic workflow following Step 3
+✅ Generate test image
+✅ Save workflow in API format
+✅ Test with fashion/product prompts
+✅ Integrate with your backend
+✅ Add to n8n workflow
+
+Pro Tips
+
+Save Multiple Workflows: Create different workflows for different product types
+Use Batch Processing: Generate multiple variations at once
+Experiment with Settings: Try different samplers and CFG values
+Keep Prompts Consistent: Use templates for consistency
+Monitor GPU Usage: Check if GPU is active for faster generation
+
+The Manager makes everything easier - no manual file downloads or complex configurations needed!
