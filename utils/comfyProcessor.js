@@ -142,7 +142,12 @@ export async function downloadComfyOutput(filename, outputDir) {
 /**
  * Create a simple text-to-image workflow
  */
-export function createTextToImageWorkflow(prompt, negativePrompt = "", seed = -1) {
+export async function createTextToImageWorkflow(prompt, negativePrompt = "", seed = -1, modelName = null) {
+	// Get default model if not specified
+	if (!modelName) {
+		modelName = await getDefaultModel();
+	}
+
 	return {
 		3: {
 			inputs: {
@@ -161,7 +166,7 @@ export function createTextToImageWorkflow(prompt, negativePrompt = "", seed = -1
 		},
 		4: {
 			inputs: {
-				ckpt_name: "v1-5-pruned-emaonly.ckpt",
+				ckpt_name: modelName,
 			},
 			class_type: "CheckpointLoaderSimple",
 		},
@@ -207,7 +212,19 @@ export function createTextToImageWorkflow(prompt, negativePrompt = "", seed = -1
 /**
  * Create an image-to-image workflow for product variations
  */
-export function createImg2ImgWorkflow(uploadedFilename, prompt, negativePrompt = "", strength = 0.75, seed = -1) {
+export async function createImg2ImgWorkflow(
+	uploadedFilename,
+	prompt,
+	negativePrompt = "",
+	strength = 0.75,
+	seed = -1,
+	modelName = null
+) {
+	// Get default model if not specified
+	if (!modelName) {
+		modelName = await getDefaultModel();
+	}
+
 	return {
 		1: {
 			inputs: {
@@ -240,7 +257,7 @@ export function createImg2ImgWorkflow(uploadedFilename, prompt, negativePrompt =
 		},
 		4: {
 			inputs: {
-				ckpt_name: "v1-5-pruned-emaonly.ckpt",
+				ckpt_name: "SD1.5/v1-5-pruned-emaonly.ckpt",
 			},
 			class_type: "CheckpointLoaderSimple",
 		},
@@ -287,8 +304,18 @@ export async function getAvailableModels() {
 		const data = await response.json();
 		return data.CheckpointLoaderSimple.input.required.ckpt_name[0];
 	} catch (error) {
-		return ["v1-5-pruned-emaonly.ckpt"]; // Default fallback
+		return ["SD1.5/v1-5-pruned-emaonly.ckpt"]; // Default fallback
 	}
+}
+
+/**
+ * Get the first available SD1.5 model
+ */
+export async function getDefaultModel() {
+	const models = await getAvailableModels();
+	// Try to find SD1.5 model
+	const sd15Model = models.find((m) => m.includes("v1-5") || m.includes("SD1.5"));
+	return sd15Model || models[0];
 }
 
 /**
@@ -326,5 +353,6 @@ export default {
 	createTextToImageWorkflow,
 	createImg2ImgWorkflow,
 	getAvailableModels,
+	getDefaultModel,
 	getFashionPrompts,
 };

@@ -1,0 +1,38 @@
+{
+  "services": {
+    "backend": true,
+    "comfyui": true,
+    "rembg": false
+  },
+  "generation": {
+    "textToImage": [
+      {
+        "name": "Red T-Shirt",
+        "success": true,
+        "duration": "3.1",
+        "filename": "ComfyUI_00026_.png",
+        "size": 249778
+      },
+      {
+        "name": "Blue Jeans",
+        "success": true,
+        "duration": "4.1",
+        "filename": "ComfyUI_00027_.png",
+        "size": 615141
+      }
+    ],
+    "batch": {
+      "success": true,
+      "count": 3,
+      "duration": "9.9"
+    }
+  },
+  "storage": {
+    "generatedImages": 2
+  },
+  "queue": {
+    "running": 0,
+    "pending": 0
+  },
+  "fashionPrompts": true
+}
